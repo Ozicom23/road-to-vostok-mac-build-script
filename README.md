@@ -2,8 +2,7 @@
 
 An automated, zero-setup bash script to extract, recompile, and build a native macOS (Apple Silicon / ARM) port of Road to Vostok directly from the original game files.
 
-## Prerequisites
-⚠️ **You must legally own the game!** This script does not distribute any game assets. You must install the game on Windows (or via Steam via CrossOver/Whisky) and locate your `RTV.pck` file to use this script.
+⚠️ **You must legally own the game!** ([Steam Store Page](https://store.steampowered.com/app/1963610/Road_to_Vostok/)) This script does not distribute any game assets. You must install the game on Windows (or via Steam via CrossOver/Whisky) and locate your `RTV.pck` file to use this script.
 
 ## What it does
 1. Automatically downloads the correct macOS `GDRE Tools` release.
