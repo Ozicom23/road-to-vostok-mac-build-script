@@ -10,7 +10,14 @@ An automated, zero-setup bash script to extract, recompile, and build a native m
 3. Scrapes the recovery logs to find the exact Godot Engine version used to build the game.
 4. Downloads that exact Godot Engine and its macOS Export Templates (~1GB).
 5. Injects the necessary macOS ETC2 texture compression settings.
-6. Recompiles and exports a fully playable, native `RoadToVostok.app` to a `mac_build` folder.
+6. Applies macOS compatibility patches (see below).
+7. Recompiles and exports a fully playable, native `RoadToVostok.app` to a `mac_build` folder.
+
+## macOS compatibility patches
+
+- **Ctrl → Cmd for item transfer** — remaps quick-transfer from `Ctrl+click` (intercepted by macOS as right-click) to `Cmd+click`.
+- **Software cursor** — replaces the native confined cursor (which has unwanted OS acceleration) with a pixel-art cursor rendered in-engine.
+- **Fullscreen resolution control** — replaces screen-percentage window sizes with six named presets (3840×2160 down to 1024×576), defaulting to 1920×1080. Applying the chosen resolution in fullscreen.
 
 ## How to use
 
