@@ -19,6 +19,15 @@ An automated, zero-setup bash script to extract, recompile, and build a native m
 - **Software cursor** — replaces the native confined cursor (which has unwanted OS acceleration) with a pixel-art cursor rendered in-engine.
 - **Fullscreen resolution control** — replaces screen-percentage window sizes with six named presets (3840×2160 down to 1024×576), defaulting to 1920×1080. Applying the chosen resolution in fullscreen.
 
+## Downloading game files
+Option A: Open Steam in CrossOver/Whisky.
+
+Option B: Download with SteamCMD:
+1. Install steamcmd via homebrew: `brew install steamcmd`
+2. Download the game files: `steamcmd +login your_steam_username_here +@sSteamCmdForcePlatformType windows +app_update 1963610 +quit`
+3. Enter the game directory: `cd ~/Library/Application\ Support/Steam/steamapps/common/Road\ to\ Vostok\ Demo`
+
+
 ## How to use
 
 1. Place the `build_rtv_mac_arm_app.sh` script into the same directory next to your `RTV.pck` file.
