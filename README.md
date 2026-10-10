@@ -4,8 +4,6 @@ An automated bash script that downloads the Road to Vostok game files, extracts 
 
 ![Settings menu with the new Upscaling dropdowns next to the Metal HUD of the native build running at 122 FPS on an M2 Max](docs/rtv_mac_native.png)
 
-*The native build on an M2 Max: the Upscaling dropdowns added by this script, and the Metal HUD showing MetalFX upscaling from 2031×1274 to the full 3456×2168 screen.*
-
 ⚠️ **You must own the game.** ([Steam Store Page](https://store.steampowered.com/app/1963610/Road_to_Vostok/)) This script does not distribute any game assets. It downloads them with your own Steam account, or uses an `RTV.pck` you already have.
 
 Latest tested game version: **0.2.1.0**. Releases of this script are tagged with the game version they were tested against (`v0.2.1.0`).
