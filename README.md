@@ -2,6 +2,10 @@
 
 An automated bash script that downloads the Road to Vostok game files, extracts them, recompiles the project and exports a native macOS (Apple Silicon / ARM) app.
 
+![Settings menu with the new Upscaling dropdowns next to the Metal HUD of the native build running at 122 FPS on an M2 Max](docs/rtv_mac_native.png)
+
+*The native build on an M2 Max: the Upscaling dropdowns added by this script, and the Metal HUD showing MetalFX upscaling from 2031×1274 to the full 3456×2168 screen.*
+
 ⚠️ **You must own the game.** ([Steam Store Page](https://store.steampowered.com/app/1963610/Road_to_Vostok/)) This script does not distribute any game assets. It downloads them with your own Steam account, or uses an `RTV.pck` you already have.
 
 Latest tested game version: **0.2.1.0**. Releases of this script are tagged with the game version they were tested against (`v0.2.1.0`).
@@ -75,7 +79,8 @@ Run the script with `--steam-user` again. SteamCMD downloads only what changed, 
 ## macOS compatibility patches
 
 - **Ctrl → Cmd for item transfer** — remaps quick-transfer from `Ctrl+click` (intercepted by macOS as right-click) to `Cmd+click`.
-- **Resolution presets** — replaces the screen-percentage window sizes with six presets (3840×2160 down to 1024×576), defaulting to 1920×1080. In windowed mode the preset sets the window size. In fullscreen, where macOS ignores window resizing, it sets the 3D render resolution instead, and it stays in effect when you change the Rendering Low/Native setting.
+- **Resolution presets** — replaces the screen-percentage window sizes with six presets (3840×2160 down to 1024×576), defaulting to 1920×1080. In windowed mode the preset sets the window size. In fullscreen, where macOS ignores window resizing, it sets the 3D render resolution instead.
+- **Upscaling (FSR / MetalFX)** — the Rendering Low/Native buttons are replaced by two dropdowns under "Upscaling": the upscaler (Off, FSR 1.0, FSR 2.2, MetalFX Spatial, MetalFX Temporal) and its quality (Full, Quality, Balanced, Performance). The 3D scene renders at the resolution preset times the quality factor and the upscaler stretches it to the screen. The default is MetalFX Spatial at Full quality, which only sharpens the upscale and never ghosts. MetalFX Temporal gives the best image but, like FSR 2.2, can ghost on fast transparent effects. MetalFX needs Apple Silicon.
 
 ## Notes
 

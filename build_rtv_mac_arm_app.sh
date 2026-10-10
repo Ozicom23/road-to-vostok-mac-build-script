@@ -303,10 +303,12 @@ PYEOF
 # Leftover from older versions of this script (software cursor patch, since removed)
 rm -f Scripts/MacCursor.gd
 
-# Patch 2: Fixed resolution presets + resolution control in fullscreen.
+# Patch 2: Resolution presets + upscaling (FSR / MetalFX) in the settings menu.
 # window.set_size() has no effect in macOS fullscreen, so in fullscreen the chosen preset is
-# applied as the 3D render scale instead. The game's own Rendering Low/Native setting writes
-# the same viewport property (World.gd), so it is patched to multiply by our factor.
+# applied as the 3D render scale instead. The game's Rendering Low/Native buttons did the same
+# job more coarsely, so they are hidden and replaced by two dropdowns: the upscaler (Off,
+# FSR 1.0, FSR 2.2, MetalFX Spatial, MetalFX Temporal) and its quality (Full ... Performance).
+# The 3D scene renders at preset x quality and the upscaler stretches it to the screen.
 # The decompiled scripts are tab-indented. Every replacement must match, or the build stops
 # rather than exporting a broken settings menu.
 python3 - <<'PYEOF'
@@ -350,8 +352,22 @@ SIZES_HANDLER = (
 HELPER = (
     "\n"
     "\n"
-    "# macOS port: resolution presets. In fullscreen the preset height becomes the 3D render scale.\n"
+    "# macOS port: resolution presets + upscaling. The 3D scene renders at preset x quality and the\n"
+    "# selected upscaler stretches it to the screen (fullscreen) or the window (windowed).\n"
     "const MAC_RES_SIZES = [" + ", ".join(f"Vector2i({w}, {h})" for w, h in SIZES) + "]\n"
+    "const MAC_UPSCALERS = [\n"
+    "\t[\"Off\", RenderingServer.VIEWPORT_SCALING_3D_MODE_BILINEAR],\n"
+    "\t[\"FSR 1.0\", RenderingServer.VIEWPORT_SCALING_3D_MODE_FSR],\n"
+    "\t[\"FSR 2.2\", RenderingServer.VIEWPORT_SCALING_3D_MODE_FSR2],\n"
+    "\t[\"MetalFX Spatial\", RenderingServer.VIEWPORT_SCALING_3D_MODE_METALFX_SPATIAL],\n"
+    "\t[\"MetalFX Temporal\", RenderingServer.VIEWPORT_SCALING_3D_MODE_METALFX_TEMPORAL]]\n"
+    "const MAC_UPSCALER_QUALITIES = [[\"Full\", 1.0], [\"Quality\", 0.667], [\"Balanced\", 0.59], [\"Performance\", 0.5]]\n"
+    "\n"
+    "func MacSetupUpscaling() -> void :\n"
+    "\tfor i in MAC_UPSCALERS.size():\n"
+    "\t\tupscaler.add_item(MAC_UPSCALERS[i][0], i)\n"
+    "\tfor i in MAC_UPSCALER_QUALITIES.size():\n"
+    "\t\tupscalerQuality.add_item(MAC_UPSCALER_QUALITIES[i][0], i)\n"
     "\n"
     "func MacApplyResolution() -> void :\n"
     "\tvar root = get_tree().get_root()\n"
@@ -363,9 +379,31 @@ HELPER = (
     "\t\tvar option = clampi(preferences.windowSize, 0, MAC_RES_SIZES.size() - 1)\n"
     "\t\tresScale = clampf(float(MAC_RES_SIZES[option].y) / maxf(1.0, float(root.size.y)), 0.1, 1.0)\n"
     "\n"
-    "\troot.set_meta(\"mac_res_scale\", resScale)\n"
-    "\tvar renderScale = 0.9 if preferences.rendering == 1 else 1.0\n"
-    "\tRenderingServer.viewport_set_scaling_3d_scale(root.get_viewport_rid(), resScale * renderScale)\n"
+    "\tvar mode = MAC_UPSCALERS[clampi(preferences.upscaler, 0, MAC_UPSCALERS.size() - 1)][1]\n"
+    "\tvar quality = MAC_UPSCALER_QUALITIES[clampi(preferences.upscalerQuality, 0, MAC_UPSCALER_QUALITIES.size() - 1)][1]\n"
+    "\tvar scale = resScale\n"
+    "\tif mode != RenderingServer.VIEWPORT_SCALING_3D_MODE_BILINEAR:\n"
+    "\t\tscale = resScale * quality\n"
+    "\tif mode == RenderingServer.VIEWPORT_SCALING_3D_MODE_METALFX_TEMPORAL:\n"
+    "\t\t# MetalFX Temporal refuses inputs below a third of the output and would fall back to FSR 2\n"
+    "\t\tscale = maxf(scale, 0.334)\n"
+    "\n"
+    "\troot.set_meta(\"mac_res_scale\", scale)\n"
+    "\tRenderingServer.viewport_set_scaling_3d_mode(root.get_viewport_rid(), mode)\n"
+    "\tRenderingServer.viewport_set_scaling_3d_scale(root.get_viewport_rid(), scale)\n"
+    "\tupscalerQuality.disabled = mode == RenderingServer.VIEWPORT_SCALING_3D_MODE_BILINEAR\n"
+    "\n"
+    "func _on_upscaler_item_selected(index: int) -> void :\n"
+    "\tpreferences.upscaler = clampi(upscaler.get_item_id(index), 0, MAC_UPSCALERS.size() - 1)\n"
+    "\tMacApplyResolution()\n"
+    "\tpreferences.Save()\n"
+    "\tPlayClick()\n"
+    "\n"
+    "func _on_upscaler_quality_item_selected(index: int) -> void :\n"
+    "\tpreferences.upscalerQuality = clampi(upscalerQuality.get_item_id(index), 0, MAC_UPSCALER_QUALITIES.size() - 1)\n"
+    "\tMacApplyResolution()\n"
+    "\tpreferences.Save()\n"
+    "\tPlayClick()\n"
 )
 
 PERCENT_BLOCK = (
@@ -406,23 +444,68 @@ patch('Scripts/Settings.gd', 'MacApplyResolution', [
      r'\1window.call_deferred("set_size", MAC_RES_SIZES[clampi(preferences.windowSize, 0, MAC_RES_SIZES.size() - 1)])\n'
      r'\1call_deferred("CenterWindow")\n',
      3),
+    ("upscaler dropdown node refs",
+     r'^(@onready var RNative = [^\n]*\n)',
+     r'\1@onready var upscaler = $Settings / Row_03 / Rendering / Settings / Upscaler\n'
+     r'@onready var upscalerQuality = $Settings / Row_03 / Rendering / Settings / Upscaler_Quality\n',
+     1),
+    ("populate upscaler dropdowns",
+     r'^(\t+)GetWindowSizes\(\)\n',
+     r'\1GetWindowSizes()\n\1MacSetupUpscaling()\n',
+     1),
+    ("select upscaler on load and apply it in both display modes",
+     r'^(\t+)sharpnessSlider\.value = preferences\.sharpness\n',
+     r'\1upscaler.select(clampi(preferences.upscaler, 0, MAC_UPSCALERS.size() - 1))\n'
+     r'\1upscalerQuality.select(clampi(preferences.upscalerQuality, 0, MAC_UPSCALER_QUALITIES.size() - 1))\n'
+     r'\1MacApplyResolution()\n'
+     r'\1sharpnessSlider.value = preferences.sharpness\n',
+     1),
 ], append=HELPER)
 
+TSCN_NODES = ''.join(
+    f'[node name="{name}" type="OptionButton" parent="Settings/Row_03/Rendering/Settings" unique_id={uid}]\n'
+    'custom_minimum_size = Vector2(0, 24)\n'
+    'layout_mode = 2\n'
+    'size_flags_horizontal = 3\n'
+    'alignment = 1\n'
+    'fit_to_longest_item = false\n'
+    'clip_text = true\n'
+    '\n'
+    for name, uid in (("Upscaler", 1960180001), ("Upscaler_Quality", 1960180002)))
+
+TSCN_CONNECTIONS = (
+    '[connection signal="item_selected" from="Settings/Row_03/Rendering/Settings/Upscaler" to="." method="_on_upscaler_item_selected"]\n'
+    '[connection signal="item_selected" from="Settings/Row_03/Rendering/Settings/Upscaler_Quality" to="." method="_on_upscaler_quality_item_selected"]\n'
+)
+
+patch('UI/Settings.tscn', 'Upscaler_Quality', [
+    ("new node ids are unused", r'unique_id=19601800(01|02)\b', '', 0),
+    ("section title", r'^text = "Render Resolution"\n', 'text = "Upscaling"\n', 1),
+    ("hide Low button", r'^(\[node name="R_Low" type="Button" parent="Settings/Row_03/Rendering/Settings"[^\n]*\n)', r'\1visible = false\n', 1),
+    ("hide Native button", r'^(\[node name="R_Native" type="Button" parent="Settings/Row_03/Rendering/Settings"[^\n]*\n)', r'\1visible = false\n', 1),
+    ("upscaler dropdowns", r'^(\[node name="Sharpness" type="Label" parent="Settings/Row_03/Rendering/Settings")', TSCN_NODES + r'\1', 1),
+    ("dropdown signals", r'^(\[connection signal="pressed" from="Settings/Row_03/Rendering/Settings/R_Native"[^\n]*\n)', r'\1' + TSCN_CONNECTIONS, 1),
+])
+
 patch('Scripts/World.gd', 'mac_res_scale', [
-    ("Rendering Low keeps the resolution scale",
+    ("Rendering Low follows the macOS resolution/upscaling settings",
      r'viewport_set_scaling_3d_scale\(currentRID, 0\.9\)',
-     r'viewport_set_scaling_3d_scale(currentRID, 0.9 * get_tree().get_root().get_meta("mac_res_scale", 1.0))',
+     r'viewport_set_scaling_3d_scale(currentRID, get_tree().get_root().get_meta("mac_res_scale", 1.0))',
      1),
-    ("Rendering Native keeps the resolution scale",
+    ("Rendering Native follows the macOS resolution/upscaling settings",
      r'viewport_set_scaling_3d_scale\(currentRID, 1\.0\)',
-     r'viewport_set_scaling_3d_scale(currentRID, 1.0 * get_tree().get_root().get_meta("mac_res_scale", 1.0))',
+     r'viewport_set_scaling_3d_scale(currentRID, get_tree().get_root().get_meta("mac_res_scale", 1.0))',
      1),
 ])
 
-patch('Scripts/Preferences.gd', '@export var windowSize = 2', [
+patch('Scripts/Preferences.gd', 'upscalerQuality', [
     ("default resolution 1920 x 1080",
      r'^(@export var windowSize = )0$',
      r'\g<1>2',
+     1),
+    ("upscaler preferences (MetalFX Spatial, Full)",
+     r'^(@export var rendering = 2\n)',
+     r'\1@export var upscaler = 3\n@export var upscalerQuality = 0\n',
      1),
 ])
 PYEOF
