@@ -9,19 +9,34 @@ GDRE_DIR="gdre_tools"
 RECOVER_DIR="RTV_recovered"
 REPO="GDRETools/gdsdecomp"
 STEAM_APP_ID="1963610"
+TESTED_GAME_VERSION="0.2.1.0"   # releases of this script are tagged v<this version>
+
+# Fingerprint of this script. The extracted project is reused across runs only while the script
+# is unchanged, because a newer script may carry patches that expect unpatched game scripts.
+if [ -f "$0" ]; then
+    SCRIPT_HASH=$(shasum -a 256 "$0" | cut -d ' ' -f 1)
+else
+    SCRIPT_HASH="unknown"
+fi
 
 usage() {
-    echo "Usage: bash $(basename "$0") [--steam-user <name>]"
+    echo "Usage: bash $(basename "$0") [--steam-user <name>] [--install] [--open] [--force-extract]"
     echo
     echo "Builds a native macOS (Apple Silicon) app from the Road to Vostok game files."
     echo "Run it in a folder that contains RTV.pck, or let it fetch the game files:"
     echo
     echo "  --steam-user <name>   Download (or update) the game files into this folder with SteamCMD."
     echo "                        Needs 'brew install steamcmd' and a Steam account that owns the game."
+    echo "  --install             Copy the finished app to /Applications (or ~/Applications if that is not writable)."
+    echo "  --open                Launch the app when the build is done."
+    echo "  --force-extract       Extract RTV.pck again even if it is unchanged since the last run."
     echo "  -h, --help            Show this help."
 }
 
 STEAM_USER=""
+INSTALL_APP=""
+OPEN_APP=""
+FORCE_EXTRACT=""
 while [ $# -gt 0 ]; do
     case "$1" in
         --steam-user)
@@ -34,6 +49,18 @@ while [ $# -gt 0 ]; do
             ;;
         --steam-user=*)
             STEAM_USER="${1#*=}"
+            shift
+            ;;
+        --install)
+            INSTALL_APP=1
+            shift
+            ;;
+        --open)
+            OPEN_APP=1
+            shift
+            ;;
+        --force-extract)
+            FORCE_EXTRACT=1
             shift
             ;;
         -h|--help)
@@ -79,53 +106,69 @@ if [ ! -f "$PCK_FILE" ]; then
     exit 1
 fi
 
-# Set the executable path
-GDRE_EXE="$GDRE_DIR/Godot RE Tools.app/Contents/MacOS/Godot RE Tools"
+# Skip the slow extraction when RTV.pck and this script are unchanged since the last run.
+# Size + modification time identify the pck; hashing ~6GB on every run would cost more than it saves.
+STAMP_FILE="$RECOVER_DIR/.extract_stamp"
+PCK_STAMP="$(stat -f '%z %m' "$PCK_FILE") $SCRIPT_HASH"
+NEED_EXTRACT=1
+if [ -z "$FORCE_EXTRACT" ] && [ -f "$RECOVER_DIR/RTV/project.godot" ] && [ -f "$STAMP_FILE" ] \
+   && [ "$(cat "$STAMP_FILE")" = "$PCK_STAMP" ]; then
+    NEED_EXTRACT=0
+    echo "$PCK_FILE is unchanged since the last extraction, reusing $RECOVER_DIR (use --force-extract to redo it)."
+fi
 
-# Download GDRE Tools if not already present (checks the binary, so an empty or partial folder is re-downloaded)
-if [ ! -f "$GDRE_EXE" ]; then
-    echo "Downloading GDRE Tools..."
-    mkdir -p "$GDRE_DIR"
-    cd "$GDRE_DIR"
+if [ "$NEED_EXTRACT" = 1 ]; then
+    # Set the executable path
+    GDRE_EXE="$GDRE_DIR/Godot RE Tools.app/Contents/MacOS/Godot RE Tools"
 
-    # Fetch the latest release API and extract the macOS browser_download_url
-    DOWNLOAD_URL=$(curl -sL "https://api.github.com/repos/$REPO/releases/latest" | grep -o '"browser_download_url": *"[^"]*macos\.zip"' | cut -d '"' -f 4)
+    # Download GDRE Tools if not already present (checks the binary, so an empty or partial folder is re-downloaded)
+    if [ ! -f "$GDRE_EXE" ]; then
+        echo "Downloading GDRE Tools..."
+        mkdir -p "$GDRE_DIR"
+        cd "$GDRE_DIR"
 
-    if [ -z "$DOWNLOAD_URL" ]; then
-        echo "Error: Could not find the latest macOS release URL."
+        # Fetch the latest release API and extract the macOS browser_download_url
+        DOWNLOAD_URL=$(curl -sL "https://api.github.com/repos/$REPO/releases/latest" | grep -o '"browser_download_url": *"[^"]*macos\.zip"' | cut -d '"' -f 4)
+
+        if [ -z "$DOWNLOAD_URL" ]; then
+            echo "Error: Could not find the latest macOS release URL."
+            exit 1
+        fi
+
+        curl -sL -o gdre.zip "$DOWNLOAD_URL"
+        unzip -q -o gdre.zip
+
+        # Make the binary executable
+        chmod +x "Godot RE Tools.app/Contents/MacOS/Godot RE Tools"
+        cd ..
+    fi
+
+    if [ ! -f "$GDRE_EXE" ]; then
+        echo "Error: Could not find the gdre executable inside $GDRE_DIR."
         exit 1
     fi
 
-    curl -sL -o gdre.zip "$DOWNLOAD_URL"
-    unzip -q -o gdre.zip
+    mkdir -p "$RECOVER_DIR"
+    # Start from a clean project so files removed from the game, or patched by an older script, don't linger
+    rm -rf "$RECOVER_DIR/RTV" "$STAMP_FILE"
+    cd "$RECOVER_DIR"
 
-    # Make the binary executable
-    chmod +x "Godot RE Tools.app/Contents/MacOS/Godot RE Tools"
+    # Create symlink to PCK if it doesn't exist
+    if [ ! -L "$PCK_FILE" ]; then
+        ln -s "../$PCK_FILE" .
+    fi
+
+    # Run the recovery tool
+    echo "Recovering project... (takes a few mins)"
+
+    # Run headless recovery
+    "../$GDRE_EXE" --headless --recover="$PCK_FILE"
+
+    echo "Extraction complete."
+
     cd ..
-fi
-
-if [ ! -f "$GDRE_EXE" ]; then
-    echo "Error: Could not find the gdre executable inside $GDRE_DIR."
-    exit 1
-fi
-
-mkdir -p "$RECOVER_DIR"
-cd "$RECOVER_DIR"
-
-# Create symlink to PCK if it doesn't exist
-if [ ! -L "$PCK_FILE" ]; then
-    ln -s "../$PCK_FILE" .
-fi
-
-# Run the recovery tool
-echo "Recovering project... (takes a few mins)"
-
-# Run headless recovery
-"../$GDRE_EXE" --headless --recover="$PCK_FILE"
-
-echo "Extraction complete."
-
-cd ..
+    echo "$PCK_STAMP" > "$STAMP_FILE"
+fi  # NEED_EXTRACT
 
 # Setup Godot Engine
 GODOT_DIR="godot_bin"
@@ -231,9 +274,9 @@ texture_format/etc=false
 texture_format/etc2=true
 EOF
 
-echo >> project.godot
-echo "[rendering]" >> project.godot
-echo "textures/vram_compression/import_etc2_astc=true" >> project.godot
+if ! grep -q '^textures/vram_compression/import_etc2_astc=true' project.godot; then
+    printf '\n[rendering]\ntextures/vram_compression/import_etc2_astc=true\n' >> project.godot
+fi
 
 # Apply macOS compatibility patches
 echo "Applying macOS patches..."
@@ -406,6 +449,24 @@ APP_SIZE=$(du -sh "$APP_PATH" | cut -f1)
 GAME_VERSION=$(grep -o '^config/version="[^"]*"' project.godot | cut -d '"' -f 2)
 GODOT_VERSION=$("$GODOT_EXE" --version 2>/dev/null | tail -n 1 | cut -d. -f1-3)
 
+GAME_LINE="${GAME_VERSION:-unknown}"
+if [ -n "$GAME_VERSION" ] && [ "$GAME_VERSION" != "$TESTED_GAME_VERSION" ]; then
+    GAME_LINE="$GAME_VERSION  (this script was tested with $TESTED_GAME_VERSION)"
+fi
+
+# Optional install: replace the previous copy of this app, nothing else
+RUN_APP="$APP_PATH"
+INSTALLED_APP=""
+if [ -n "$INSTALL_APP" ]; then
+    INSTALL_DIR="/Applications"
+    [ -w "$INSTALL_DIR" ] || INSTALL_DIR="$HOME/Applications"
+    mkdir -p "$INSTALL_DIR"
+    INSTALLED_APP="$INSTALL_DIR/RoadToVostok.app"
+    rm -rf "$INSTALLED_APP"
+    ditto "$APP_PATH" "$INSTALLED_APP"
+    RUN_APP="$INSTALLED_APP"
+fi
+
 # Colors only when printing to a terminal
 if [ -t 1 ]; then
     GREEN=$'\033[1;32m'; DIM=$'\033[2m'; RESET=$'\033[0m'
@@ -417,7 +478,14 @@ echo
 echo "${GREEN}✔ Build successful${RESET}"
 echo "  App:    $APP_PATH"
 echo "  Size:   $APP_SIZE"
-echo "  Game:   ${GAME_VERSION:-unknown}"
+echo "  Game:   $GAME_LINE"
 echo "  Godot:  $GODOT_VERSION"
-echo "  Run:    open \"$APP_PATH\""
+if [ -n "$INSTALLED_APP" ]; then
+    echo "  Installed: $INSTALLED_APP"
+fi
+echo "  Run:    open \"$RUN_APP\""
 echo "${DIM}  The \"leaked at exit\" lines above come from Godot's editor shutdown and don't affect the app.${RESET}"
+
+if [ -n "$OPEN_APP" ]; then
+    open "$RUN_APP"
+fi

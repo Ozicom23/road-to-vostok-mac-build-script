@@ -4,7 +4,7 @@ An automated bash script that downloads the Road to Vostok game files, extracts 
 
 ⚠️ **You must own the game.** ([Steam Store Page](https://store.steampowered.com/app/1963610/Road_to_Vostok/)) This script does not distribute any game assets. It downloads them with your own Steam account, or uses an `RTV.pck` you already have.
 
-Latest tested game version: **0.2.1.0**
+Latest tested game version: **0.2.1.0**. Releases of this script are tagged with the game version they were tested against (`v0.2.1.0`).
 
 ## Quick start
 
@@ -17,7 +17,11 @@ Latest tested game version: **0.2.1.0**
    git clone https://github.com/Ozicom23/road-to-vostok-mac-build-script.git
    cd road-to-vostok-mac-build-script
    ```
-   Don't want the repo? Download just `build_rtv_mac_arm_app.sh` into an empty folder and open a Terminal there instead.
+   Don't want the repo? Download just the script into an empty folder instead:
+   ```bash
+   mkdir road-to-vostok && cd road-to-vostok
+   curl -LO https://github.com/Ozicom23/road-to-vostok-mac-build-script/releases/latest/download/build_rtv_mac_arm_app.sh
+   ```
 3. Run the script with your Steam username:
    ```bash
    bash build_rtv_mac_arm_app.sh --steam-user your_steam_username
@@ -27,6 +31,21 @@ Latest tested game version: **0.2.1.0**
 5. Your app is `mac_build/RoadToVostok.app`. The script prints the full path at the end.
 
 Running the script with `bash` bypasses macOS Gatekeeper restrictions on the script itself.
+
+### Options
+
+| Flag | What it does |
+| --- | --- |
+| `--steam-user <name>` | Download or update the game files into this folder with SteamCMD. |
+| `--install` | Copy the finished app to `/Applications` (or `~/Applications` if that isn't writable), replacing a previous copy. |
+| `--open` | Launch the app when the build is done. |
+| `--force-extract` | Extract `RTV.pck` again even if it is unchanged since the last run. |
+
+For example, to download, build, install and start the game in one go:
+
+```bash
+bash build_rtv_mac_arm_app.sh --steam-user your_steam_username --install --open
+```
 
 ### Already have the game files?
 
@@ -40,13 +59,13 @@ Look for `RTV.pck` in your Steam library under `steamapps/common/Road to Vostok`
 
 ### Updating the game
 
-Run the script with `--steam-user` again. SteamCMD downloads only what changed, and the project is re-extracted and rebuilt from the updated files.
+Run the script with `--steam-user` again. SteamCMD downloads only what changed, and the project is re-extracted and rebuilt from the updated files. If `RTV.pck` turns out to be unchanged, the extraction is skipped and only the export runs.
 
 ## What it does
 
 1. Downloads or updates the game files with SteamCMD (when run with `--steam-user`).
 2. Downloads the correct macOS `GDRE Tools` release.
-3. Extracts your `RTV.pck` file.
+3. Extracts your `RTV.pck` file. Later runs reuse the extracted project while `RTV.pck` and the script are unchanged (`--force-extract` overrides this).
 4. Scrapes the recovery logs to find the exact Godot Engine version used to build the game.
 5. Downloads that exact Godot Engine and its macOS Export Templates (~1GB).
 6. Injects the necessary macOS ETC2 texture compression settings.
