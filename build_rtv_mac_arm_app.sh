@@ -8,18 +8,82 @@ PCK_FILE="RTV.pck"
 GDRE_DIR="gdre_tools"
 RECOVER_DIR="RTV_recovered"
 REPO="GDRETools/gdsdecomp"
+STEAM_APP_ID="1963610"
+
+usage() {
+    echo "Usage: bash $(basename "$0") [--steam-user <name>]"
+    echo
+    echo "Builds a native macOS (Apple Silicon) app from the Road to Vostok game files."
+    echo "Run it in a folder that contains RTV.pck, or let it fetch the game files:"
+    echo
+    echo "  --steam-user <name>   Download (or update) the game files into this folder with SteamCMD."
+    echo "                        Needs 'brew install steamcmd' and a Steam account that owns the game."
+    echo "  -h, --help            Show this help."
+}
+
+STEAM_USER=""
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --steam-user)
+            if [ -z "$2" ]; then
+                echo "Error: --steam-user needs your Steam username."
+                exit 1
+            fi
+            STEAM_USER="$2"
+            shift 2
+            ;;
+        --steam-user=*)
+            STEAM_USER="${1#*=}"
+            shift
+            ;;
+        -h|--help)
+            usage
+            exit 0
+            ;;
+        *)
+            echo "Error: Unknown option '$1'"
+            echo
+            usage
+            exit 1
+            ;;
+    esac
+done
 
 echo "Starting Godot Mac Build..."
+
+# Download or update the game files with SteamCMD
+if [ -n "$STEAM_USER" ]; then
+    if ! command -v steamcmd >/dev/null 2>&1; then
+        echo "Error: steamcmd is not installed. Install it with: brew install steamcmd"
+        exit 1
+    fi
+
+    echo "Fetching game files with SteamCMD into $(pwd) (~6GB on first download)..."
+    echo "SteamCMD will ask for your Steam password and Steam Guard code."
+
+    # force_install_dir must come before login, or SteamCMD ignores it.
+    # SteamCMD's exit code is unreliable, so the file check below decides whether it worked.
+    steamcmd +force_install_dir "$(pwd)" +@sSteamCmdForcePlatformType windows +login "$STEAM_USER" +app_update "$STEAM_APP_ID" +quit || true
+
+    if [ ! -f "$PCK_FILE" ]; then
+        echo "Error: SteamCMD finished but '$PCK_FILE' is not here. Check the SteamCMD output above."
+        exit 1
+    fi
+fi
 
 # Check if the PCK file exists
 if [ ! -f "$PCK_FILE" ]; then
     echo "Error: Could not find '$PCK_FILE' in the current directory."
-    echo "Make sure you are running this script in the game's main directory."
+    echo "Either copy or move your RTV.pck into this folder, or let the script download it:"
+    echo "  bash $(basename "$0") --steam-user <your_steam_username>"
     exit 1
 fi
 
-# Download GDRE Tools if not already present
-if [ ! -d "$GDRE_DIR" ]; then
+# Set the executable path
+GDRE_EXE="$GDRE_DIR/Godot RE Tools.app/Contents/MacOS/Godot RE Tools"
+
+# Download GDRE Tools if not already present (checks the binary, so an empty or partial folder is re-downloaded)
+if [ ! -f "$GDRE_EXE" ]; then
     echo "Downloading GDRE Tools..."
     mkdir -p "$GDRE_DIR"
     cd "$GDRE_DIR"
@@ -39,9 +103,6 @@ if [ ! -d "$GDRE_DIR" ]; then
     chmod +x "Godot RE Tools.app/Contents/MacOS/Godot RE Tools"
     cd ..
 fi
-
-# Set the executable path
-GDRE_EXE="$GDRE_DIR/Godot RE Tools.app/Contents/MacOS/Godot RE Tools"
 
 if [ ! -f "$GDRE_EXE" ]; then
     echo "Error: Could not find the gdre executable inside $GDRE_DIR."
@@ -80,7 +141,11 @@ if [ -n "$DETECTED_VERSION" ]; then
     API_URL="https://api.github.com/repos/godotengine/godot/releases/tags/${DETECTED_VERSION}-stable"
 fi
 
-if [ ! -d "$GODOT_DIR" ]; then
+# Set Godot executable path
+GODOT_EXE="$(pwd)/$GODOT_DIR/Godot.app/Contents/MacOS/Godot"
+
+# Download Godot if not already present (checks the binary, so an empty or partial folder is re-downloaded)
+if [ ! -f "$GODOT_EXE" ]; then
     echo "Downloading Godot engine..."
     mkdir -p "$GODOT_DIR"
     cd "$GODOT_DIR"
@@ -124,9 +189,6 @@ if [ ! -f "$GODOT_DIR/templates/macos.zip" ]; then
     fi
     cd ..
 fi
-
-# Set Godot executable path
-GODOT_EXE="$(pwd)/$GODOT_DIR/Godot.app/Contents/MacOS/Godot"
 
 if [ ! -f "$GODOT_EXE" ]; then
     echo "Error: Could not find the Godot executable inside $GODOT_DIR."
@@ -195,267 +257,141 @@ else:
     print("  [OK] item_transfer: Ctrl (4194326) -> Cmd (4194327)")
 PYEOF
 
-# Patch 2: Software cursor — bypasses macOS pointer acceleration when UI is open
-cat > Scripts/MacCursor.gd << 'GDEOF'
-extends CanvasLayer
+# Leftover from older versions of this script (software cursor patch, since removed)
+rm -f Scripts/MacCursor.gd
 
-var _sprite: Sprite2D
-
-func _ready() -> void:
-	layer = 100
-	process_mode = Node.PROCESS_MODE_ALWAYS
-	_sprite = Sprite2D.new()
-	_sprite.texture = _build_arrow()
-	_sprite.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-	_sprite.centered = false
-	_sprite.scale = Vector2(2.0, 2.0)
-	add_child(_sprite)
-
-func _process(_delta: float) -> void:
-	var active := Input.get_mouse_mode() == Input.MOUSE_MODE_CONFINED_HIDDEN
-	_sprite.visible = active
-	if active:
-		_sprite.position = get_viewport().get_mouse_position()
-
-func _build_arrow() -> ImageTexture:
-	# B=black, W=white, space=transparent. 12x18px rendered at 2x.
-	var rows := [
-		"B           ",
-		"BB          ",
-		"BWB         ",
-		"BWWB        ",
-		"BWWWB       ",
-		"BWWWWB      ",
-		"BWWWWWB     ",
-		"BWWWWWWB    ",
-		"BWWWWWWWWB  ",
-		"BWWWWWWWWWB ",
-		"BWWWWWWWWWWB",
-		"BWWWWWBBBBBB",
-		"BWWBWWB     ",
-		"BWB BWWB    ",
-		"BB  BWWB    ",
-		"B    BWWB   ",
-		"     BWWB   ",
-		"      BBBB  "
-	]
-	var img := Image.create(12, rows.size(), false, Image.FORMAT_RGBA8)
-	img.fill(Color.TRANSPARENT)
-	for y in rows.size():
-		for x in rows[y].length():
-			match rows[y][x]:
-				"B": img.set_pixel(x, y, Color.BLACK)
-				"W": img.set_pixel(x, y, Color.WHITE)
-	return ImageTexture.create_from_image(img)
-GDEOF
-echo "  [OK] MacCursor.gd written"
-
-# Register MacCursor as an autoload
-if grep -q 'MacCursor' project.godot; then
-    echo "  [SKIP] MacCursor autoload already registered"
-else
-    sed -i '' 's|Simulation="\*res://Resources/Simulation.tscn"|Simulation="*res://Resources/Simulation.tscn"\nMacCursor="*res://Scripts/MacCursor.gd"|' project.godot
-    echo "  [OK] MacCursor registered in project.godot autoloads"
-fi
-
-# Switch UIManager from MOUSE_MODE_CONFINED to MOUSE_MODE_CONFINED_HIDDEN
-if grep -q 'MOUSE_MODE_CONFINED)' Scripts/UIManager.gd; then
-    sed -i '' \
-        's/Input\.set_mouse_mode(Input\.MOUSE_MODE_CONFINED)/Input.set_mouse_mode(Input.MOUSE_MODE_CONFINED_HIDDEN)/g' \
-        Scripts/UIManager.gd
-    echo "  [OK] UIManager: MOUSE_MODE_CONFINED -> MOUSE_MODE_CONFINED_HIDDEN"
-else
-    echo "  [SKIP] UIManager mouse mode already patched"
-fi
-
-# Patch 3a: Set windowSize default to 2 (1920x1080) — ID 0 is now 4K with high-to-low ordering
+# Patch 2: Fixed resolution presets + resolution control in fullscreen.
+# window.set_size() has no effect in macOS fullscreen, so in fullscreen the chosen preset is
+# applied as the 3D render scale instead. The game's own Rendering Low/Native setting writes
+# the same viewport property (World.gd), so it is patched to multiply by our factor.
+# The decompiled scripts are tab-indented. Every replacement must match, or the build stops
+# rather than exporting a broken settings menu.
 python3 - <<'PYEOF'
-import re, glob
-patched_any = False
-for path in glob.glob('Scripts/*.gd') + glob.glob('Resources/*.gd'):
-    if 'Settings' in path:
-        continue
+import re, sys
+
+SIZES = [(3840, 2160), (2560, 1440), (1920, 1080), (1600, 900), (1280, 720), (1024, 576)]
+
+def patch(path, marker, steps, append=''):
     with open(path) as f:
         content = f.read()
-    new_content, n = re.subn(
-        r'(var\s+windowSize\s*(?::\s*\w+)?\s*=\s*)0\b',
-        r'\g<1>2',
-        content
-    )
-    if n:
-        with open(path, 'w') as f:
-            f.write(new_content)
-        print(f"  [OK] {path}: windowSize default 0 -> 2 (1920x1080)")
-        patched_any = True
-if not patched_any:
-    print("  [SKIP] windowSize default not found (already patched or not in expected location)")
+    if marker in content:
+        print(f"  [SKIP] {path}: already patched")
+        return
+    for name, pattern, repl, expected in steps:
+        content, n = re.subn(pattern, repl, content, flags=re.M | re.S)
+        if n != expected:
+            sys.exit(f"  [FAIL] {path}: '{name}' matched {n} time(s), expected {expected}. "
+                     f"The game scripts changed; this patch needs updating.")
+        print(f"  [OK] {path}: {name}")
+    content += append
+    with open(path, 'w') as f:
+        f.write(content)
+
+SIZES_HANDLER = (
+    "func _on_sizes_item_selected(index: int) -> void :\n"
+    "\tvar window = get_window()\n"
+    "\tvar option = clampi(sizes.get_item_id(index), 0, MAC_RES_SIZES.size() - 1)\n"
+    "\tpreferences.windowSize = option\n"
+    "\n"
+    "\tif preferences.displayMode == 1:\n"
+    "\t\tMacApplyResolution()\n"
+    "\telse:\n"
+    "\t\twindow.set_mode(Window.MODE_WINDOWED)\n"
+    "\t\twindow.set_size(MAC_RES_SIZES[option])\n"
+    "\t\tCenterWindow()\n"
+    "\n"
+    "\tpreferences.Save()\n"
+    "\tPlayClick()\n"
+)
+
+HELPER = (
+    "\n"
+    "\n"
+    "# macOS port: resolution presets. In fullscreen the preset height becomes the 3D render scale.\n"
+    "const MAC_RES_SIZES = [" + ", ".join(f"Vector2i({w}, {h})" for w, h in SIZES) + "]\n"
+    "\n"
+    "func MacApplyResolution() -> void :\n"
+    "\tvar root = get_tree().get_root()\n"
+    "\tif not root.size_changed.is_connected(MacApplyResolution):\n"
+    "\t\troot.size_changed.connect(MacApplyResolution)\n"
+    "\n"
+    "\tvar resScale = 1.0\n"
+    "\tif preferences.displayMode == 1:\n"
+    "\t\tvar option = clampi(preferences.windowSize, 0, MAC_RES_SIZES.size() - 1)\n"
+    "\t\tresScale = clampf(float(MAC_RES_SIZES[option].y) / maxf(1.0, float(root.size.y)), 0.1, 1.0)\n"
+    "\n"
+    "\troot.set_meta(\"mac_res_scale\", resScale)\n"
+    "\tvar renderScale = 0.9 if preferences.rendering == 1 else 1.0\n"
+    "\tRenderingServer.viewport_set_scaling_3d_scale(root.get_viewport_rid(), resScale * renderScale)\n"
+)
+
+PERCENT_BLOCK = (
+    r'^(\t+)if preferences\.windowSize == 0:\n'
+    r'\1\twindow\.set_size\(DisplayServer\.screen_get_size\(\)\)\n'
+    r'\1elif preferences\.windowSize == 1:\n'
+    r'\1\twindow\.set_size\(DisplayServer\.screen_get_size\(\) / 1\.1\)\n'
+    r'\1elif preferences\.windowSize == 2:\n'
+    r'\1\twindow\.set_size\(DisplayServer\.screen_get_size\(\) / 1\.25\)\n'
+    r'\1elif preferences\.windowSize == 3:\n'
+    r'\1\twindow\.set_size\(DisplayServer\.screen_get_size\(\) / 1\.5\)\n'
+    r'\n?\1CenterWindow\(\)\n'
+)
+
+patch('Scripts/Settings.gd', 'MacApplyResolution', [
+    ("resolution presets",
+     r'var windowSizes: Dictionary = \{[^}]*\}',
+     'var windowSizes: Dictionary = {\n' + ',\n'.join(f'"{w} x {h}": int({i})' for i, (w, h) in enumerate(SIZES)) + '}',
+     1),
+    ("sizes dropdown enabled in fullscreen",
+     r'^(\t+)sizes\.disabled = true\n',
+     r'\1sizes.disabled = false\n',
+     2),
+    ("apply resolution on load",
+     r'^(\t+)windowed\.set_pressed_no_signal\(false\)\n\1window\.set_mode\(Window\.MODE_FULLSCREEN\)\n',
+     r'\1windowed.set_pressed_no_signal(false)\n\1window.set_mode(Window.MODE_FULLSCREEN)\n\1MacApplyResolution()\n',
+     1),
+    ("apply resolution when display mode changes",
+     r'^(\t+)preferences\.displayMode = ([12])\n',
+     r'\1preferences.displayMode = \2\n\1MacApplyResolution()\n',
+     2),
+    ("sizes handler: fullscreen -> render scale, windowed -> window size",
+     r'^func _on_sizes_item_selected\(index: int\) -> void :\n.*?\n\tPlayClick\(\)\n',
+     SIZES_HANDLER,
+     1),
+    ("windowed sizes: screen percentages -> presets",
+     PERCENT_BLOCK,
+     r'\1window.call_deferred("set_size", MAC_RES_SIZES[clampi(preferences.windowSize, 0, MAC_RES_SIZES.size() - 1)])\n'
+     r'\1call_deferred("CenterWindow")\n',
+     3),
+], append=HELPER)
+
+patch('Scripts/World.gd', 'mac_res_scale', [
+    ("Rendering Low keeps the resolution scale",
+     r'viewport_set_scaling_3d_scale\(currentRID, 0\.9\)',
+     r'viewport_set_scaling_3d_scale(currentRID, 0.9 * get_tree().get_root().get_meta("mac_res_scale", 1.0))',
+     1),
+    ("Rendering Native keeps the resolution scale",
+     r'viewport_set_scaling_3d_scale\(currentRID, 1\.0\)',
+     r'viewport_set_scaling_3d_scale(currentRID, 1.0 * get_tree().get_root().get_meta("mac_res_scale", 1.0))',
+     1),
+])
+
+patch('Scripts/Preferences.gd', '@export var windowSize = 2', [
+    ("default resolution 1920 x 1080",
+     r'^(@export var windowSize = )0$',
+     r'\g<1>2',
+     1),
+])
 PYEOF
 
-# Patch 3: Replace percentage-based window sizes with fixed resolution presets
-python3 - <<'PYEOF'
-with open('Scripts/Settings.gd', 'r') as f:
-    content = f.read()
-
-MARKER = '"3840 x 2160": int(0)'
-if MARKER in content:
-    print("  [SKIP] Settings.gd resolution presets already applied")
-    exit()
-
-import re
-
-# IDs must be sequential so get_item_id(index)==index (OptionButton auto-assigns IDs)
-content = re.sub(
-    r'var windowSizes: Dictionary = \{[^}]*\}',
-    'var windowSizes: Dictionary = {\n'
-    '"3840 x 2160": int(0),\n'
-    '"2560 x 1440": int(1),\n'
-    '"1920 x 1080": int(2),\n'
-    '"1600 x 900": int(3),\n'
-    '"1280 x 720": int(4),\n'
-    '"1024 x 576": int(5)}',
-    content
-)
-
-# Load-time block uses call_deferred (set_size in _ready() is ignored by Godot).
-# Item-selected handler keeps plain set_size() so Patch 4 can match and rewrite it.
-def replace_size_block(m):
-    indent = m.group(1)
-    i2 = indent + '    '
-    var = m.group(2)
-    if var == 'preferences.windowSize':
-        def sz(w, h): return f'window.call_deferred("set_size", Vector2i({w}, {h}))'
-    else:
-        def sz(w, h): return f'window.set_size(Vector2i({w}, {h}))'
-    return (
-        f'{indent}if {var} == 0:\n{i2}{sz(3840, 2160)}\n'
-        f'{indent}elif {var} == 1:\n{i2}{sz(2560, 1440)}\n'
-        f'{indent}elif {var} == 2:\n{i2}{sz(1920, 1080)}\n'
-        f'{indent}elif {var} == 3:\n{i2}{sz(1600, 900)}\n'
-        f'{indent}elif {var} == 4:\n{i2}{sz(1280, 720)}\n'
-        f'{indent}elif {var} == 5:\n{i2}{sz(1024, 576)}'
-    )
-
-content = re.sub(
-    r'([ \t]+)if (preferences\.windowSize|option) == 0:\n'
-    r'[ \t]+window\.set_size\(DisplayServer\.screen_get_size\(\)\)\n'
-    r'[ \t]+elif \2 == 1:\n'
-    r'[ \t]+window\.set_size\(DisplayServer\.screen_get_size\(\) / 1\.1\)\n'
-    r'[ \t]+elif \2 == 2:\n'
-    r'[ \t]+window\.set_size\(DisplayServer\.screen_get_size\(\) / 1\.25\)\n'
-    r'[ \t]+elif \2 == 3:\n'
-    r'[ \t]+window\.set_size\(DisplayServer\.screen_get_size\(\) / 1\.5\)',
-    replace_size_block,
-    content
-)
-
-with open('Scripts/Settings.gd', 'w') as f:
-    f.write(content)
-print("  [OK] Settings: window sizes -> 3840x2160 / 2560x1440 / 1920x1080 / 1600x900 / 1280x720 / 1024x576")
-PYEOF
-
-# Patch 4: Enable resolution control in fullscreen via scaling_3d_scale
-# (window.set_size() has no effect in macOS fullscreen mode)
-python3 - <<'PYEOF'
-with open('Scripts/Settings.gd', 'r') as f:
-    content = f.read()
-
-MARKER = 'window.get_mode() == Window.MODE_FULLSCREEN'
-if MARKER in content:
-    print("  [SKIP] Settings.gd fullscreen resolution already patched")
-    exit()
-
-# set_deferred: scaling_3d_scale set synchronously after set_mode(FULLSCREEN) gets
-# reset when the async OS transition completes and the viewport resizes.
-content = content.replace(
-    '        window.set_mode(Window.MODE_FULLSCREEN)\n'
-    '        sizes.disabled = true\n'
-    '\n'
-    '\n'
-    '    elif preferences.displayMode == 2:',
-    '        window.set_mode(Window.MODE_FULLSCREEN)\n'
-    '        sizes.disabled = false\n'
-    '        var _fs_h = [2160.0, 1440.0, 1080.0, 900.0, 720.0, 576.0]\n'
-    '        get_viewport().set_deferred("scaling_3d_scale", clampf(_fs_h[preferences.windowSize] / float(DisplayServer.screen_get_size().y), 0.1, 1.0))\n'
-    '\n'
-    '\n'
-    '    elif preferences.displayMode == 2:'
-)
-
-# _on_fullscreen_pressed
-content = content.replace(
-    'func _on_fullscreen_pressed() -> void :\n'
-    '    var window = get_window()\n'
-    '    window.set_mode(Window.MODE_FULLSCREEN)\n'
-    '    sizes.disabled = true\n'
-    '\n'
-    '    preferences.displayMode = 1\n'
-    '    preferences.Save()\n'
-    '    PlayClick()\n',
-    'func _on_fullscreen_pressed() -> void :\n'
-    '    var window = get_window()\n'
-    '    window.set_mode(Window.MODE_FULLSCREEN)\n'
-    '    sizes.disabled = false\n'
-    '    var _fs_h = [2160.0, 1440.0, 1080.0, 900.0, 720.0, 576.0]\n'
-    '    get_viewport().scaling_3d_scale = clampf(_fs_h[preferences.windowSize] / float(DisplayServer.screen_get_size().y), 0.1, 1.0)\n'
-    '\n'
-    '    preferences.displayMode = 1\n'
-    '    preferences.Save()\n'
-    '    PlayClick()\n'
-)
-
-# _on_windowed_pressed
-content = content.replace(
-    'func _on_windowed_pressed() -> void :\n'
-    '    var window = get_window()\n'
-    '    window.set_mode(Window.MODE_WINDOWED)\n'
-    '    sizes.disabled = false\n',
-    'func _on_windowed_pressed() -> void :\n'
-    '    var window = get_window()\n'
-    '    window.set_mode(Window.MODE_WINDOWED)\n'
-    '    get_viewport().scaling_3d_scale = 1.0\n'
-    '    sizes.disabled = false\n'
-)
-
-# _on_sizes_item_selected: branch on fullscreen vs windowed
-import re
-content = re.sub(
-    r'func _on_sizes_item_selected\(index: int\) -> void :\n'
-    r'    var window = get_window\(\)\n'
-    r'    window\.set_mode\(Window\.MODE_WINDOWED\)\n'
-    r'    var option = sizes\.get_item_id\(index\)\n'
-    r'\n'
-    r'    if option == 0:\n'
-    r'        window\.set_size\(Vector2i\(3840, 2160\)\)\n'
-    r'    elif option == 1:\n'
-    r'        window\.set_size\(Vector2i\(2560, 1440\)\)\n'
-    r'    elif option == 2:\n'
-    r'        window\.set_size\(Vector2i\(1920, 1080\)\)\n'
-    r'    elif option == 3:\n'
-    r'        window\.set_size\(Vector2i\(1600, 900\)\)\n'
-    r'    elif option == 4:\n'
-    r'        window\.set_size\(Vector2i\(1280, 720\)\)\n'
-    r'    elif option == 5:\n'
-    r'        window\.set_size\(Vector2i\(1024, 576\)\)\n'
-    r'    CenterWindow\(\)\n',
-    'func _on_sizes_item_selected(index: int) -> void :\n'
-    '    var window = get_window()\n'
-    '    var option = sizes.get_item_id(index)\n'
-    '    var _fs_h = [2160.0, 1440.0, 1080.0, 900.0, 720.0, 576.0]\n'
-    '    var _sz = [Vector2i(3840, 2160), Vector2i(2560, 1440), Vector2i(1920, 1080), Vector2i(1600, 900), Vector2i(1280, 720), Vector2i(1024, 576)]\n'
-    '\n'
-    '    if window.get_mode() == Window.MODE_FULLSCREEN:\n'
-    '        get_viewport().scaling_3d_scale = clampf(_fs_h[option] / float(DisplayServer.screen_get_size().y), 0.1, 1.0)\n'
-    '    else:\n'
-    '        window.set_mode(Window.MODE_WINDOWED)\n'
-    '        window.call_deferred("set_size", _sz[option])\n'
-    '        CenterWindow()\n',
-    content
-)
-
-with open('Scripts/Settings.gd', 'w') as f:
-    f.write(content)
-print("  [OK] Settings: fullscreen resolution via scaling_3d_scale enabled")
-PYEOF
+# The patched scripts must still parse. Autoload lookups fail under --check-only, so only parse errors count.
+for script in Scripts/Settings.gd Scripts/World.gd Scripts/Preferences.gd; do
+    if "$GODOT_EXE" --headless --path . --check-only --script "res://$script" 2>&1 | grep -q "Parse Error"; then
+        echo "Error: $script does not parse after patching. Build stopped."
+        exit 1
+    fi
+done
+echo "  [OK] patched scripts parse"
 
 echo "Patches applied."
 
@@ -465,4 +401,23 @@ mkdir -p "../../mac_build"
 
 "$GODOT_EXE" --headless --export-release "macOS" "../../mac_build/RoadToVostok.app"
 
-echo "Build complete! App is in mac_build"
+APP_PATH="$(cd ../../mac_build && pwd)/RoadToVostok.app"
+APP_SIZE=$(du -sh "$APP_PATH" | cut -f1)
+GAME_VERSION=$(grep -o '^config/version="[^"]*"' project.godot | cut -d '"' -f 2)
+GODOT_VERSION=$("$GODOT_EXE" --version 2>/dev/null | tail -n 1 | cut -d. -f1-3)
+
+# Colors only when printing to a terminal
+if [ -t 1 ]; then
+    GREEN=$'\033[1;32m'; DIM=$'\033[2m'; RESET=$'\033[0m'
+else
+    GREEN=""; DIM=""; RESET=""
+fi
+
+echo
+echo "${GREEN}✔ Build successful${RESET}"
+echo "  App:    $APP_PATH"
+echo "  Size:   $APP_SIZE"
+echo "  Game:   ${GAME_VERSION:-unknown}"
+echo "  Godot:  $GODOT_VERSION"
+echo "  Run:    open \"$APP_PATH\""
+echo "${DIM}  The \"leaked at exit\" lines above come from Godot's editor shutdown and don't affect the app.${RESET}"

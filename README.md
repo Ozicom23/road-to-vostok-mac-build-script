@@ -1,40 +1,64 @@
 # Road to Vostok Mac Auto-Porter
 
-An automated, zero-setup bash script to extract, recompile, and build a native macOS (Apple Silicon / ARM) port of Road to Vostok directly from the original game files.
+An automated bash script that downloads the Road to Vostok game files, extracts them, recompiles the project and exports a native macOS (Apple Silicon / ARM) app.
 
-⚠️ **You must own the game and/or have the game files!** ([Steam Store Page](https://store.steampowered.com/app/1963610/Road_to_Vostok/)) This script does not distribute any game assets. You must install the game on Windows (or via Steam via CrossOver/Whisky) and locate your `RTV.pck` file to use this script.
+⚠️ **You must own the game.** ([Steam Store Page](https://store.steampowered.com/app/1963610/Road_to_Vostok/)) This script does not distribute any game assets. It downloads them with your own Steam account, or uses an `RTV.pck` you already have.
+
+Latest tested game version: **0.2.1.0**
+
+## Quick start
+
+1. Install SteamCMD:
+   ```bash
+   brew install steamcmd
+   ```
+2. Clone this repo and enter it:
+   ```bash
+   git clone https://github.com/Ozicom23/road-to-vostok-mac-build-script.git
+   cd road-to-vostok-mac-build-script
+   ```
+   Don't want the repo? Download just `build_rtv_mac_arm_app.sh` into an empty folder and open a Terminal there instead.
+3. Run the script with your Steam username:
+   ```bash
+   bash build_rtv_mac_arm_app.sh --steam-user your_steam_username
+   ```
+   SteamCMD asks for your Steam password and Steam Guard code, then downloads the game files (~6 GB) into this folder. The build starts right after.
+4. Wait for it to finish. Extraction and texture compilation take a few minutes depending on your Mac.
+5. Your app is `mac_build/RoadToVostok.app`. The script prints the full path at the end.
+
+Running the script with `bash` bypasses macOS Gatekeeper restrictions on the script itself.
+
+### Already have the game files?
+
+If the game is installed somewhere else (a Windows PC, Steam in CrossOver/Whisky, or an earlier SteamCMD download), copy or move `RTV.pck` into this folder and run the script without arguments:
+
+```bash
+bash build_rtv_mac_arm_app.sh
+```
+
+Look for `RTV.pck` in your Steam library under `steamapps/common/Road to Vostok`. SteamCMD without an install dir puts it in `~/Library/Application Support/Steam/steamapps/common/Road to Vostok`.
+
+### Updating the game
+
+Run the script with `--steam-user` again. SteamCMD downloads only what changed, and the project is re-extracted and rebuilt from the updated files.
 
 ## What it does
-1. Automatically downloads the correct macOS `GDRE Tools` release.
-2. Extracts your `RTV.pck` file.
-3. Scrapes the recovery logs to find the exact Godot Engine version used to build the game.
-4. Downloads that exact Godot Engine and its macOS Export Templates (~1GB).
-5. Injects the necessary macOS ETC2 texture compression settings.
-6. Applies macOS compatibility patches (see below).
-7. Recompiles and exports a fully playable, native `RoadToVostok.app` to a `mac_build` folder.
+
+1. Downloads or updates the game files with SteamCMD (when run with `--steam-user`).
+2. Downloads the correct macOS `GDRE Tools` release.
+3. Extracts your `RTV.pck` file.
+4. Scrapes the recovery logs to find the exact Godot Engine version used to build the game.
+5. Downloads that exact Godot Engine and its macOS Export Templates (~1GB).
+6. Injects the necessary macOS ETC2 texture compression settings.
+7. Applies macOS compatibility patches (see below).
+8. Recompiles and exports a fully playable, native `RoadToVostok.app` to a `mac_build` folder.
 
 ## macOS compatibility patches
 
 - **Ctrl → Cmd for item transfer** — remaps quick-transfer from `Ctrl+click` (intercepted by macOS as right-click) to `Cmd+click`.
-- **Software cursor** — replaces the native confined cursor (which has unwanted OS acceleration) with a pixel-art cursor rendered in-engine.
-- **Fullscreen resolution control** — replaces screen-percentage window sizes with six named presets (3840×2160 down to 1024×576), defaulting to 1920×1080. Applying the chosen resolution in fullscreen.
+- **Resolution presets** — replaces the screen-percentage window sizes with six presets (3840×2160 down to 1024×576), defaulting to 1920×1080. In windowed mode the preset sets the window size. In fullscreen, where macOS ignores window resizing, it sets the 3D render resolution instead, and it stays in effect when you change the Rendering Low/Native setting.
 
-## Downloading game files
-Option A: Open Steam in CrossOver/Whisky.
+## Notes
 
-Option B: Download with SteamCMD:
-1. Install steamcmd via homebrew: `brew install steamcmd`
-2. Download the game files: `steamcmd +login your_steam_username_here +@sSteamCmdForcePlatformType windows +app_update 1963610 +quit`
-3. Enter the game directory: `cd ~/Library/Application\ Support/Steam/steamapps/common/Road\ to\ Vostok\ Demo`
-
-
-## How to use
-
-1. Place the `build_rtv_mac_arm_app.sh` script into the same directory next to your `RTV.pck` file.
-2. Open your Terminal in that folder.
-3. Run the script using `bash` (this automatically bypasses macOS Gatekeeper restrictions):
-   ```bash
-   bash build_rtv_mac_arm_app.sh
-   ```
-4. Wait for the process to finish. The initial extraction and texture compilation will take a few minutes depending on your Mac's speed.
-5. You will find your app file `RoadToVostok.app` inside the newly created `mac_build` directory.
+- The Godot export ends with `ObjectDB instances leaked at exit` and `resources still in use at exit`. These come from Godot's editor shutting down, not from the build, and the app is unaffected.
+- Game files, downloaded tools and build output are listed in `.gitignore`, so a `git add .` in this folder stays small.

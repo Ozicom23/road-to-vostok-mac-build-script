@@ -1,0 +1,12 @@
+# Game files (downloaded by SteamCMD or copied in by the user)
+RTV.pck
+RTV.exe
+steamapps/
+
+# Tools and build output created by the script
+RTV_recovered/
+gdre_tools/
+godot_bin/
+mac_build/
+
+.DS_Store
