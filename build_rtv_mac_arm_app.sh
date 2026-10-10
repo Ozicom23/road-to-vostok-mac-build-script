@@ -11,14 +11,6 @@ REPO="GDRETools/gdsdecomp"
 STEAM_APP_ID="1963610"
 TESTED_GAME_VERSION="0.2.1.0"   # releases of this script are tagged v<this version>
 
-# Fingerprint of this script. The extracted project is reused across runs only while the script
-# is unchanged, because a newer script may carry patches that expect unpatched game scripts.
-if [ -f "$0" ]; then
-    SCRIPT_HASH=$(shasum -a 256 "$0" | cut -d ' ' -f 1)
-else
-    SCRIPT_HASH="unknown"
-fi
-
 usage() {
     echo "Usage: bash $(basename "$0") [--steam-user <name>] [--install] [--open] [--force-extract]"
     echo
@@ -106,13 +98,14 @@ if [ ! -f "$PCK_FILE" ]; then
     exit 1
 fi
 
-# Skip the slow extraction when RTV.pck and this script are unchanged since the last run.
+# Skip the slow extraction when RTV.pck is unchanged since the last run.
 # Size + modification time identify the pck; hashing ~6GB on every run would cost more than it saves.
 STAMP_FILE="$RECOVER_DIR/.extract_stamp"
-PCK_STAMP="$(stat -f '%z %m' "$PCK_FILE") $SCRIPT_HASH"
+PRISTINE_DIR="$RECOVER_DIR/pristine"
+PCK_STAMP="$(stat -f '%z %m' "$PCK_FILE")"
 NEED_EXTRACT=1
-if [ -z "$FORCE_EXTRACT" ] && [ -f "$RECOVER_DIR/RTV/project.godot" ] && [ -f "$STAMP_FILE" ] \
-   && [ "$(cat "$STAMP_FILE")" = "$PCK_STAMP" ]; then
+if [ -z "$FORCE_EXTRACT" ] && [ -f "$RECOVER_DIR/RTV/project.godot" ] && [ -f "$PRISTINE_DIR/project.godot" ] \
+   && [ -f "$STAMP_FILE" ] && [ "$(cat "$STAMP_FILE")" = "$PCK_STAMP" ]; then
     NEED_EXTRACT=0
     echo "$PCK_FILE is unchanged since the last extraction, reusing $RECOVER_DIR (use --force-extract to redo it)."
 fi
@@ -149,8 +142,13 @@ if [ "$NEED_EXTRACT" = 1 ]; then
     fi
 
     mkdir -p "$RECOVER_DIR"
-    # Start from a clean project so files removed from the game, or patched by an older script, don't linger
-    rm -rf "$RECOVER_DIR/RTV" "$STAMP_FILE"
+    rm -rf "$STAMP_FILE" "$PRISTINE_DIR"
+    # Start from a clean project so files removed from the game don't linger, but keep Godot's import
+    # cache (.godot/, several GB of compressed textures). Its entries are validated by content hash,
+    # so unchanged textures are reused and the export stays fast even across game updates.
+    if [ -d "$RECOVER_DIR/RTV" ]; then
+        find "$RECOVER_DIR/RTV" -mindepth 1 -maxdepth 1 ! -name .godot -exec rm -rf {} +
+    fi
     cd "$RECOVER_DIR"
 
     # Create symlink to PCK if it doesn't exist
@@ -167,6 +165,12 @@ if [ "$NEED_EXTRACT" = 1 ]; then
     echo "Extraction complete."
 
     cd ..
+
+    # Keep untouched copies of everything the patches below edit. Each run restores them first, so the
+    # patches always start from pristine files even when this script changed since the extraction.
+    mkdir -p "$PRISTINE_DIR"
+    cp "$RECOVER_DIR/RTV/project.godot" "$PRISTINE_DIR/project.godot"
+    cp -R "$RECOVER_DIR/RTV/Scripts" "$RECOVER_DIR/RTV/UI" "$PRISTINE_DIR/"
     echo "$PCK_STAMP" > "$STAMP_FILE"
 fi  # NEED_EXTRACT
 
@@ -238,8 +242,15 @@ if [ ! -f "$GODOT_EXE" ]; then
     exit 1
 fi
 
-# Setup Export Presets
 cd "$RECOVER_DIR/RTV"
+
+# Restore the pristine copies of the files the patches edit (see the extraction step). This overlays
+# the extracted files and leaves everything else untouched: Godot's import cache, and the .import
+# files Godot rewrites on export (restoring those would make it re-import the UI textures every run).
+cp ../pristine/project.godot project.godot
+tar -C ../pristine --exclude='*.import' -cf - Scripts UI | tar -xf -
+
+# Setup Export Presets
 
 # We overwrite the export_presets.cfg so it strictly targets macOS
 cat << 'EOF' > export_presets.cfg
@@ -508,10 +519,22 @@ patch('Scripts/Preferences.gd', 'upscalerQuality', [
      r'\1@export var upscaler = 3\n@export var upscalerQuality = 0\n',
      1),
 ])
+
+# Patch 3: native menu cursor. macOS has no "confined" cursor mode, so Godot emulates it by detaching
+# the cursor from the mouse and warping it on every motion event with raw, unaccelerated deltas. That
+# makes the cursor in menus slow and jumpy. Visible mode hands the cursor back to macOS. In fullscreen
+# the window is the whole screen, so nothing is lost; the hidden-cursor modes are left alone.
+for path in ('Scripts/UIManager.gd', 'Scripts/Loader.gd'):
+    patch(path, 'MOUSE_MODE_VISIBLE', [
+        ("menu cursor: confined -> visible",
+         r'Input\.set_mouse_mode\(Input\.MOUSE_MODE_CONFINED\)',
+         r'Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE)',
+         1),
+    ])
 PYEOF
 
 # The patched scripts must still parse. Autoload lookups fail under --check-only, so only parse errors count.
-for script in Scripts/Settings.gd Scripts/World.gd Scripts/Preferences.gd; do
+for script in Scripts/Settings.gd Scripts/World.gd Scripts/Preferences.gd Scripts/UIManager.gd Scripts/Loader.gd; do
     if "$GODOT_EXE" --headless --path . --check-only --script "res://$script" 2>&1 | grep -q "Parse Error"; then
         echo "Error: $script does not parse after patching. Build stopped."
         exit 1

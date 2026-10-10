@@ -69,7 +69,7 @@ Run the script with `--steam-user` again. SteamCMD downloads only what changed, 
 
 1. Downloads or updates the game files with SteamCMD (when run with `--steam-user`).
 2. Downloads the correct macOS `GDRE Tools` release.
-3. Extracts your `RTV.pck` file. Later runs reuse the extracted project while `RTV.pck` and the script are unchanged (`--force-extract` overrides this).
+3. Extracts your `RTV.pck` file. Later runs reuse the extracted project and Godot's texture cache while `RTV.pck` is unchanged, and re-apply the patches to pristine copies of the game files (`--force-extract` re-extracts).
 4. Scrapes the recovery logs to find the exact Godot Engine version used to build the game.
 5. Downloads that exact Godot Engine and its macOS Export Templates (~1GB).
 6. Injects the necessary macOS ETC2 texture compression settings.
@@ -81,6 +81,7 @@ Run the script with `--steam-user` again. SteamCMD downloads only what changed, 
 - **Ctrl → Cmd for item transfer** — remaps quick-transfer from `Ctrl+click` (intercepted by macOS as right-click) to `Cmd+click`.
 - **Resolution presets** — replaces the screen-percentage window sizes with six presets (3840×2160 down to 1024×576), defaulting to 1920×1080. In windowed mode the preset sets the window size. In fullscreen, where macOS ignores window resizing, it sets the 3D render resolution instead.
 - **Upscaling (FSR / MetalFX)** — the Rendering Low/Native buttons are replaced by two dropdowns under "Upscaling": the upscaler (Off, FSR 1.0, FSR 2.2, MetalFX Spatial, MetalFX Temporal) and its quality (Full, Quality, Balanced, Performance). The 3D scene renders at the resolution preset times the quality factor and the upscaler stretches it to the screen. The default is MetalFX Spatial at Full quality, which only sharpens the upscale and never ghosts. MetalFX Temporal gives the best image but, like FSR 2.2, can ghost on fast transparent effects. MetalFX needs Apple Silicon.
+- **Native menu cursor** — the game shows its menu cursor in Godot's "confined" mouse mode, which macOS has no native support for. Godot emulates it by moving the cursor itself with raw, unaccelerated deltas, which makes it slow and jumpy. The patch uses the normal visible mode instead, so macOS drives the cursor. If the pointer still balloons when you move it fast, that is the system's "Shake mouse pointer to locate" setting under Accessibility → Display.
 
 ## Notes
 
