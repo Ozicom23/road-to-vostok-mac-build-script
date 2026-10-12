@@ -6,7 +6,7 @@ An automated bash script that downloads the Road to Vostok game files, extracts 
 
 ⚠️ **You must own the game.** ([Steam Store Page](https://store.steampowered.com/app/1963610/Road_to_Vostok/)) This script does not distribute any game assets. It downloads them with your own Steam account, or uses an `RTV.pck` you already have.
 
-Latest tested game version: **0.2.1.0**. Releases of this script are tagged with the game version they were tested against (`v0.2.1.0`).
+Latest tested game version: **0.2.1.0**.
 
 ## Quick start
 
@@ -80,8 +80,3 @@ Run the script with `--steam-user` again. SteamCMD downloads only what changed, 
 - **Resolution presets** — replaces the screen-percentage window sizes with six presets (3840×2160 down to 1024×576), defaulting to 1920×1080. In windowed mode the preset sets the window size. In fullscreen, where macOS ignores window resizing, it sets the 3D render resolution instead.
 - **Upscaling (FSR / MetalFX)** — the Rendering Low/Native buttons are replaced by two dropdowns under "Upscaling": the upscaler (Off, FSR 1.0, FSR 2.2, MetalFX Spatial, MetalFX Temporal) and its quality (Full, Quality, Balanced, Performance). The 3D scene renders at the resolution preset times the quality factor and the upscaler stretches it to the screen. The default is MetalFX Spatial at Full quality, which only sharpens the upscale and never ghosts. MetalFX Temporal gives the best image but, like FSR 2.2, can ghost on fast transparent effects. MetalFX needs Apple Silicon.
 - **Native menu cursor** — the game shows its menu cursor in Godot's "confined" mouse mode, which macOS has no native support for. Godot emulates it by moving the cursor itself with raw, unaccelerated deltas, which makes it slow and jumpy. The patch uses the normal visible mode instead, so macOS drives the cursor. If the pointer still balloons when you move it fast, that is the system's "Shake mouse pointer to locate" setting under Accessibility → Display.
-
-## Notes
-
-- The Godot export ends with `ObjectDB instances leaked at exit` and `resources still in use at exit`. These come from Godot's editor shutting down, not from the build, and the app is unaffected.
-- Game files, downloaded tools and build output are listed in `.gitignore`, so a `git add .` in this folder stays small.
