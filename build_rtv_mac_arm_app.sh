@@ -9,7 +9,7 @@ GDRE_DIR="gdre_tools"
 RECOVER_DIR="RTV_recovered"
 REPO="GDRETools/gdsdecomp"
 STEAM_APP_ID="1963610"
-TESTED_GAME_VERSION="0.2.1.0"   # releases of this script are tagged v<this version>
+TESTED_GAME_VERSION="0.2.2.0"   # releases of this script are tagged v<this version>
 
 usage() {
     echo "Usage: bash $(basename "$0") [--steam-user <name>] [--install] [--open] [--force-extract]"

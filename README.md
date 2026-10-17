@@ -6,7 +6,7 @@ An automated bash script that downloads the Road to Vostok game files, extracts 
 
 ⚠️ **You must own the game.** ([Steam Store Page](https://store.steampowered.com/app/1963610/Road_to_Vostok/)) This script does not distribute any game assets. It downloads them with your own Steam account, or uses an `RTV.pck` you already have.
 
-Latest tested game version: **0.2.1.0**.
+Latest tested game version: **0.2.2.0**.
 
 ## Quick start
 
